@@ -19,6 +19,11 @@ const alertSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    source: {
+      type: String,
+      enum: ["ai", "rule", "system"],
+      default: "system",
+    },
   },
   {
     timestamps: true,

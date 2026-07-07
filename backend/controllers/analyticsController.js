@@ -1,6 +1,9 @@
 const Analytics = require("../models/Analytics");
 const Event = require("../models/Event");
 const Alert = require("../models/Alert");
+const { predict } = require("../services/predictiveAnalytics");
+const rulesEngine = require("../services/rulesEngine");
+const logger = require("../config/logger");
 
 const getAnalytics = async (req, res) => {
   try {
@@ -119,6 +122,23 @@ const getAnalytics = async (req, res) => {
 
     console.log(`🎯 Event type dist:`, eventTypeDist);
 
+    // Compute predictions
+    const algo = req.query.algo || "ewma";
+    const eventCounts = eventsTrend.map((t) => t.count);
+    const revenueValues = revenueTrend.map((r) => r.revenue);
+    const eventsPrediction = predict(eventCounts, algo);
+    const revenuePrediction = predict(revenueValues, algo);
+
+    // Compute Health Score (0-100)
+    const trafficScore = Math.min(100, ((kpis.eventsPerMinute || 0) / 5) * 100);
+    const revenueScore = Math.min(100, ((kpis.totalRevenue || 0) / 10000) * 100);
+    const conversionRate = kpis.totalClicks > 0 ? (kpis.totalPurchases / kpis.totalClicks) * 100 : 0;
+    const conversionScore = Math.min(100, (conversionRate / 5) * 100);
+    const engagementScore = Math.min(100, eventCounts.length * 5);
+    const healthScore = Math.round(
+      0.25 * trafficScore + 0.30 * revenueScore + 0.25 * conversionScore + 0.20 * engagementScore
+    );
+
     res.json({
       kpis,
       eventsTrend: eventsTrend.map((t) => ({ time: t._id, count: t.count })),
@@ -127,9 +147,15 @@ const getAnalytics = async (req, res) => {
       countryDistribution: countryDist.map((c) => ({ country: c._id, count: c.count })),
       pageDistribution: pageDist.map((p) => ({ page: p._id, count: p.count })),
       eventTypeDistribution: eventTypeDist.map((e) => ({ name: e._id, value: e.count })),
+      predictions: {
+        events: eventsPrediction,
+        revenue: revenuePrediction,
+        algo,
+      },
+      healthScore,
     });
   } catch (error) {
-    console.error("❌ Analytics Error:", error.message);
+    logger.error("Analytics Error:", error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -430,6 +456,10 @@ const collectEvent = async (req, res) => {
       updatedAt: analytics.updatedAt
     });
 
+    // Hook dynamic rule engine first
+    await rulesEngine.evaluateEvent(savedEvent, io);
+    
+    // Then run legacy hardcoded local alerts
     await checkLocalAlertRules(savedEvent, io);
 
     console.log("📝 Ingested event processed directly (fallback):", savedEvent);
@@ -477,4 +507,98 @@ const checkLocalAlertRules = async (event, io) => {
   }
 };
 
-module.exports = { getAnalytics, getRawEvents, resetAnalytics, seedAnalyticsData, collectEvent };
+/**
+ * GET /api/analytics/timeline
+ * Returns a chronological paginated feed of events for the Event Timeline page.
+ */
+const getEventTimeline = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const eventType = req.query.eventType || null;
+    const query = eventType ? { eventType } : {};
+
+    const [events, total] = await Promise.all([
+      Event.find(query).sort({ timestamp: -1 }).skip(skip).limit(limit).lean(),
+      Event.countDocuments(query),
+    ]);
+
+    res.json({
+      events,
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    logger.error("Timeline Error:", error.message);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/sessions
+ * Returns a list of all user sessions grouped by userId with summary metrics.
+ */
+const getSessions = async (req, res) => {
+  try {
+    const sessions = await Event.aggregate([
+      {
+        $group: {
+          _id: "$userId",
+          eventCount: { $sum: 1 },
+          startTime: { $min: "$timestamp" },
+          endTime: { $max: "$timestamp" },
+          country: { $first: "$country" },
+          device: { $first: "$device" },
+          pagesVisited: { $addToSet: "$page" },
+          totalAmount: { $sum: "$amount" }
+        }
+      },
+      {
+        $project: {
+          userId: "$_id",
+          _id: 0,
+          eventCount: 1,
+          startTime: 1,
+          endTime: 1,
+          durationMs: { $subtract: ["$endTime", "$startTime"] },
+          country: 1,
+          device: 1,
+          pagesVisited: 1,
+          totalAmount: 1
+        }
+      },
+      { $sort: { endTime: -1 } },
+      { $limit: 100 } // Limit to last 100 sessions for performance
+    ]);
+
+    res.json(sessions);
+  } catch (error) {
+    logger.error("Session Aggregation Error:", error.message);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * GET /api/analytics/sessions/:userId
+ * Returns a chronological list of events for a specific user to drive the Session Replay player.
+ */
+const getSessionDetails = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const events = await Event.find({ userId }).sort({ timestamp: 1 }).lean();
+    
+    if (!events || events.length === 0) {
+      return res.status(404).json({ message: "Session not found" });
+    }
+
+    res.json(events);
+  } catch (error) {
+    logger.error("Session Detail Error:", error.message);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { getAnalytics, getRawEvents, resetAnalytics, seedAnalyticsData, collectEvent, getEventTimeline, getSessions, getSessionDetails };

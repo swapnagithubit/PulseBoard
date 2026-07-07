@@ -9,7 +9,8 @@ import {
   Bell, 
   AlertCircle, 
   Info,
-  ShieldAlert
+  ShieldAlert,
+  Brain
 } from "lucide-react";
 
 const Alerts = () => {
@@ -73,6 +74,7 @@ const Alerts = () => {
   const filteredAlerts = realtimeAlerts.filter(alert => {
     if (filterType === "all") return true;
     if (filterType === "unread") return !alert.read;
+    if (filterType === "ai") return alert.source === "ai";
     return alert.type === filterType;
   });
 
@@ -152,6 +154,17 @@ const Alerts = () => {
           >
             Info ({realtimeAlerts.filter(a => a.type === "info").length})
           </button>
+          <button
+            onClick={() => setFilterType("ai")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 ${
+              filterType === "ai"
+                ? "bg-purple-500/10 border-purple-500/20 text-purple-400"
+                : "bg-white/5 border-transparent text-gray-400 hover:text-white"
+            }`}
+          >
+            <Brain size={12} />
+            AI Detected ({realtimeAlerts.filter(a => a.source === "ai").length})
+          </button>
         </div>
 
         {/* Display Alert items */}
@@ -196,6 +209,11 @@ const Alerts = () => {
                       <span className="text-xs text-white font-bold leading-normal">{alert.message}</span>
                       {!alert.read && (
                         <span className="px-1.5 py-0.5 rounded text-[8px] bg-indigo-600/30 text-indigo-400 font-extrabold uppercase tracking-wide border border-indigo-500/20">New</span>
+                      )}
+                      {alert.source === "ai" && (
+                        <span className="px-1.5 py-0.5 rounded text-[8px] bg-purple-600/30 text-purple-400 font-extrabold uppercase tracking-wide border border-purple-500/20 flex items-center gap-1">
+                          <Brain size={8} /> AI Detected
+                        </span>
                       )}
                     </div>
                     <span className="text-[10px] text-gray-500 mt-1 block font-semibold">

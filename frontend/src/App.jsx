@@ -6,7 +6,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Sidebar from "./components/Sidebar";
 import Navbar from "./components/Navbar";
 
-// Pages
+// Existing Pages
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import EventExplorer from "./pages/EventExplorer";
@@ -14,6 +14,17 @@ import Alerts from "./pages/Alerts";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import Integration from "./pages/Integration";
+
+// New Tier 1 Pages
+import AICopilot from "./pages/AICopilot";
+import WorldMap from "./pages/WorldMap";
+import Architecture from "./pages/Architecture";
+import EventTimeline from "./pages/EventTimeline";
+
+// Tier 2 & 3 Pages
+import RulesEngine from "./pages/RulesEngine";
+import SessionReplay from "./pages/SessionReplay";
+import AIReports from "./pages/AIReports";
 
 function Layout() {
   return (
@@ -29,12 +40,24 @@ function Layout() {
         {/* Pages render area */}
         <main className="flex-grow pt-24 px-8 pb-8 overflow-y-auto max-w-[1400px] mx-auto w-full">
           <Routes>
+            {/* Existing routes */}
             <Route path="/" element={<Dashboard />} />
             <Route path="/explorer" element={<EventExplorer />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/integration" element={<Integration />} />
+
+            {/* New Tier 1 routes */}
+            <Route path="/ai" element={<AICopilot />} />
+            <Route path="/worldmap" element={<WorldMap />} />
+            <Route path="/architecture" element={<Architecture />} />
+            <Route path="/timeline" element={<EventTimeline />} />
+
+            {/* Tier 2 & 3 routes */}
+            <Route path="/rules" element={<RulesEngine />} />
+            <Route path="/sessions" element={<SessionReplay />} />
+            <Route path="/reports" element={<AIReports />} />
           </Routes>
         </main>
       </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useState, useContext, useCallback } from "react";
 import axios from "axios";
 import { SocketContext } from "../context/SocketContext";
 import { AuthContext } from "../context/AuthContext";
@@ -22,7 +22,11 @@ import {
   Globe, 
   Layers,
   FileText,
-  Clock
+  Clock,
+  Brain,
+  Sparkles,
+  Heart,
+  AlertTriangle
 } from "lucide-react";
 
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
@@ -67,6 +71,11 @@ const Dashboard = () => {
     eventTypeDistribution: [],
   });
 
+  const [predictions, setPredictions] = useState(null);
+  const [healthScore, setHealthScore] = useState(null);
+  const [aiInsights, setAiInsights] = useState([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const [hoveredCountry, setHoveredCountry] = useState(null);
@@ -79,7 +88,6 @@ const Dashboard = () => {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
       });
-      console.log("✅ Analytics data fetched:", data);
       setKpis(data.kpis);
       setChartsData({
         eventsTrend: data.eventsTrend || [],
@@ -89,24 +97,41 @@ const Dashboard = () => {
         pageDistribution: data.pageDistribution || [],
         eventTypeDistribution: data.eventTypeDistribution || [],
       });
+      if (data.predictions) setPredictions(data.predictions);
+      if (data.healthScore !== undefined) setHealthScore(data.healthScore);
       setLastRefreshed(new Date());
     } catch (err) {
-      console.error("❌ Failed to fetch analytics data:", err.response?.data || err.message);
+      console.error("Failed to fetch analytics data:", err.response?.data || err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // Fetch AI insights (auto-refreshes every 5 minutes)
+  const fetchInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    try {
+      const { data } = await axios.get("/api/ai/insights", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (data.success) setAiInsights(data.insights || []);
+    } catch {}
+    finally { setInsightsLoading(false); }
+  }, []);
+
   // On Mount: Load analytics data & set up 5-second auto-refresh
   useEffect(() => {
     fetchDashboardData();
+    fetchInsights();
 
     const interval = setInterval(() => {
       fetchDashboardData();
-    }, 5000); // Auto refresh every 5 seconds
+    }, 5000);
 
-    return () => clearInterval(interval);
-  }, []);
+    const insightInterval = setInterval(fetchInsights, 5 * 60 * 1000);
+
+    return () => { clearInterval(interval); clearInterval(insightInterval); };
+  }, [fetchInsights]);
 
   // Sync real-time KPI socket messages immediately to override cached statistics
   useEffect(() => {
@@ -170,45 +195,107 @@ const Dashboard = () => {
       </div>
 
       {/* KPI Stats Components */}
-      <KPIStats kpis={kpis} />
+      <KPIStats kpis={kpis} predictions={predictions} />
 
-      {/* Primary Analytical Grid (Trends and Line Charts) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Real-time Events Per Minute Chart */}
-        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl flex flex-col justify-between">
+      {/* AI Insights Panel */}
+      {(aiInsights.length > 0 || insightsLoading) && (
+        <div className="glass-panel p-5 rounded-2xl">
+          <div className="flex items-center gap-2 mb-4">
+            <Brain size={16} className="text-indigo-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Insights</h3>
+            {insightsLoading && <div className="w-3 h-3 rounded-full border border-indigo-400 border-t-transparent animate-spin ml-auto" />}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {aiInsights.map((insight) => {
+              const borderMap = { positive: "border-emerald-500/20 bg-emerald-500/5", warning: "border-amber-500/20 bg-amber-500/5", danger: "border-red-500/20 bg-red-500/5", tip: "border-indigo-500/20 bg-indigo-500/5", info: "border-blue-500/20 bg-blue-500/5" };
+              const textMap = { positive: "text-emerald-400", warning: "text-amber-400", danger: "text-red-400", tip: "text-indigo-400", info: "text-blue-400" };
+              return (
+                <div key={insight.id} className={`rounded-xl border p-4 ${borderMap[insight.type] || "border-white/10"}`}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{insight.icon}</span>
+                      <p className="text-xs font-semibold text-white">{insight.title}</p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/5 ${textMap[insight.type] || "text-gray-400"}`}>{insight.badge}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">{insight.description}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Health Score + Primary Charts row */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Health Score Gauge */}
+        {healthScore !== null && (
+          <div className="glass-panel p-6 rounded-2xl flex flex-col items-center justify-center gap-4">
+            <div className="flex items-center gap-2">
+              <Heart size={16} className="text-pink-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Health Score</h3>
+            </div>
+            <div className="relative w-32 h-32">
+              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="12" />
+                <circle
+                  cx="50" cy="50" r="42" fill="none"
+                  stroke={healthScore >= 75 ? "#10b981" : healthScore >= 50 ? "#f59e0b" : "#ef4444"}
+                  strokeWidth="12"
+                  strokeLinecap="round"
+                  strokeDasharray={`${(healthScore / 100) * 263.9} 263.9`}
+                  style={{ transition: "stroke-dasharray 1s ease-in-out" }}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center rotate-0">
+                <p className="text-3xl font-black text-white">{healthScore}</p>
+                <p className="text-[10px] text-gray-500 font-semibold">/100</p>
+              </div>
+            </div>
+            <div className="text-center">
+              <p className={`text-sm font-bold ${healthScore >= 75 ? "text-emerald-400" : healthScore >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                {healthScore >= 75 ? "Excellent" : healthScore >= 50 ? "Good" : "Needs Attention"}
+              </p>
+              <p className="text-[10px] text-gray-600 mt-0.5">Based on traffic, revenue,<br />conversion & engagement</p>
+            </div>
+          </div>
+        )}
+
+        {/* Real-time Events Per Minute Chart — spans remaining columns */}
+        <div className={`glass-panel p-6 rounded-2xl flex flex-col justify-between ${healthScore !== null ? "lg:col-span-3" : "lg:col-span-4"}`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-2">
               <Activity size={18} className="text-indigo-400 animate-pulse" />
               <h3 className="text-sm font-bold text-white uppercase tracking-wider">Live Events per Minute</h3>
             </div>
-            <span className="text-[10px] text-gray-500 font-semibold">Last 10 minutes interval</span>
+            <div className="flex items-center gap-3">
+              {predictions?.events && (
+                <span className="text-[10px] text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full">
+                  Prediction: {predictions.events.predicted} ({predictions.events.confidence}% conf.)
+                </span>
+              )}
+              <span className="text-[10px] text-gray-500 font-semibold">Last 24h intervals</span>
+            </div>
           </div>
-
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartsData.eventsTrend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="time" stroke="#6b7280" fontSize={11} tickLine={false} />
                 <YAxis stroke="#6b7280" fontSize={11} tickLine={false} />
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ backgroundColor: "rgba(17, 24, 39, 0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px" }}
                   labelStyle={{ color: "#fff", fontWeight: "bold" }}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="count" 
-                  name="Event Count"
-                  stroke="#6366f1" 
-                  strokeWidth={3} 
-                  dot={{ r: 4, strokeWidth: 1 }} 
-                  activeDot={{ r: 6 }} 
-                />
+                <Line type="monotone" dataKey="count" name="Events" stroke="#6366f1" strokeWidth={3} dot={{ r: 3, strokeWidth: 1 }} activeDot={{ r: 6 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
+      </div>
 
+      {/* Live Events Stream + Revenue Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Real-Time User Activity Ticker Feed */}
         <div className="glass-panel p-6 rounded-2xl flex flex-col h-[352px]">
           <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
@@ -216,6 +303,7 @@ const Dashboard = () => {
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></div>
               <h3 className="text-sm font-bold text-white uppercase tracking-wider">Live Event Stream</h3>
             </div>
+
             <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
               {kafkaStatus === "Connected" ? "Streaming" : "Pipeline Idle"}
             </span>
@@ -276,10 +364,9 @@ const Dashboard = () => {
             </AnimatePresence>
           </div>
         </div>
-
       </div>
 
-      {/* Secondary Aggregated Metrics Grid (Device Pie, Country Bar, Revenue Area) */}
+      {/* Secondary Aggregated Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
         {/* Revenue Trend Area Chart */}
@@ -289,7 +376,14 @@ const Dashboard = () => {
               <TrendingUp size={18} className="text-emerald-400" />
               <h3 className="text-sm font-bold text-white uppercase tracking-wider">Revenue Trend</h3>
             </div>
-            <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full font-bold">Income</span>
+            <div className="flex items-center gap-2">
+              {predictions?.revenue && (
+                <span className="text-[10px] text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full">
+                  ~${predictions.revenue.predicted.toLocaleString()} ({predictions.revenue.confidence}%)
+                </span>
+              )}
+              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full font-bold">Income</span>
+            </div>
           </div>
 
           <div className="h-56">

@@ -9,7 +9,14 @@ import {
   User, 
   LogOut,
   TrendingUp,
-  Terminal
+  Terminal,
+  Brain,
+  Globe,
+  Cpu,
+  Clock,
+  MonitorSmartphone,
+  ActivitySquare,
+  FileText
 } from "lucide-react";
 
 const Sidebar = () => {
@@ -24,8 +31,15 @@ const Sidebar = () => {
   const navItems = [
     { name: "Dashboard", path: "/", icon: LayoutDashboard },
     { name: "Event Explorer", path: "/explorer", icon: Compass },
+    { name: "Event Timeline", path: "/timeline", icon: Clock },
+    { name: "AI Copilot", path: "/ai", icon: Brain },
+    { name: "World Map", path: "/worldmap", icon: Globe },
+    { name: "Architecture", path: "/architecture", icon: Cpu },
     { name: "Alerts", path: "/alerts", icon: AlertTriangle },
-    { name: "Website Integration", path: "/integration", icon: Terminal },
+    { name: "Session Replay", path: "/sessions", icon: MonitorSmartphone },
+    { name: "Alert Rules", path: "/rules", icon: ActivitySquare },
+    { name: "AI Reports", path: "/reports", icon: FileText },
+    { name: "Integration", path: "/integration", icon: Terminal },
     { name: "Profile", path: "/profile", icon: User },
     { name: "Settings", path: "/settings", icon: Settings },
   ];
@@ -34,7 +48,7 @@ const Sidebar = () => {
     <aside className="w-64 glass-sidebar min-h-screen flex flex-col justify-between p-6 fixed left-0 top-0 z-30">
       <div className="flex flex-col flex-1">
         {/* Logo Section */}
-        <div className="flex items-center space-x-3 mb-10 px-2">
+        <div className="flex items-center space-x-3 mb-8 px-2">
           <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20 text-white flex items-center justify-center">
             <TrendingUp size={22} className="animate-pulse" />
           </div>
@@ -43,27 +57,33 @@ const Sidebar = () => {
               PulseBoard
             </h1>
             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest block -mt-1">
-              Real-time analytics
+              AI Analytics Platform
             </span>
           </div>
         </div>
 
         {/* Navigation Menu */}
-        <nav className="space-y-1.5">
+        <nav className="space-y-1">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === "/"}
               className={({ isActive }) =>
-                `flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm transition duration-200 ${
+                `flex items-center space-x-3 px-4 py-2.5 rounded-xl font-medium text-sm transition duration-200 ${
                   isActive
                     ? "bg-indigo-600/25 text-indigo-400 border border-indigo-500/20 shadow-md shadow-indigo-500/5 font-semibold"
                     : "text-gray-400 hover:bg-white/5 hover:text-white"
                 }`
               }
             >
-              <item.icon size={18} />
+              <item.icon size={17} />
               <span>{item.name}</span>
+              {item.name === "AI Copilot" && (
+                <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                  AI
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

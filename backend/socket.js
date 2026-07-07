@@ -1,4 +1,5 @@
 const Alert = require("./models/Alert");
+const logger = require("./config/logger");
 
 let io;
 let lastConsumerHeartbeat = 0;
@@ -8,13 +9,13 @@ const initSocket = (server) => {
   const { Server } = require("socket.io");
   io = new Server(server, {
     cors: {
-      origin: "*", // allow access from frontend ports
+      origin: "*",
       methods: ["GET", "POST"],
     },
   });
 
   io.on("connection", (socket) => {
-    console.log("🔌 Client connected:", socket.id);
+    logger.info(`🔌 Client connected: ${socket.id}`);
 
     // Send the current consumer connection status to the newly connected UI client
     socket.emit("consumer-status", consumerConnected ? "Connected" : "Disconnected");
@@ -25,7 +26,7 @@ const initSocket = (server) => {
       if (!consumerConnected) {
         consumerConnected = true;
         io.emit("consumer-status", "Connected");
-        console.log("✅ Kafka Consumer status: CONNECTED");
+        logger.info("✅ Kafka Consumer status: CONNECTED");
       }
     });
 
@@ -42,28 +43,75 @@ const initSocket = (server) => {
       io.emit("new-alert", alert);
     });
 
+    // ─── AI Copilot Chat ────────────────────────────────────────────────────
+    // Client sends chat:start → server processes and streams back via chat:token / chat:end
+    socket.on("chat:start", async ({ message, sessionId }) => {
+      if (!message || !sessionId) return;
+
+      logger.info(`[AI Chat] Socket ${socket.id} — "${message.slice(0, 60)}"`);
+
+      try {
+        const { fetchAnalyticsContext } = require("./services/analyticsContext");
+        const { getHistory, addMessage } = require("./services/chatMemory");
+        const { getProvider } = require("./services/llm");
+
+        const [context, history] = await Promise.all([
+          fetchAnalyticsContext(),
+          Promise.resolve(getHistory(sessionId)),
+        ]);
+
+        addMessage(sessionId, { role: "user", content: message });
+        const messages = [...history, { role: "user", content: message }];
+
+        const provider = getProvider();
+        let fullResponse = "";
+
+        socket.emit("chat:start", { sessionId });
+
+        await provider.stream(messages, context, (token) => {
+          fullResponse += token;
+          socket.emit("chat:token", { token, sessionId });
+        });
+
+        addMessage(sessionId, { role: "assistant", content: fullResponse });
+
+        socket.emit("chat:end", {
+          sessionId,
+          fullResponse,
+          provider: provider.getName(),
+        });
+      } catch (err) {
+        logger.error("[AI Chat Socket] Error:", err.message);
+        socket.emit("chat:end", {
+          sessionId,
+          fullResponse: `⚠️ AI service error: ${err.message}`,
+          provider: "Error",
+        });
+      }
+    });
+
     socket.on("disconnect", () => {
-      console.log("❌ Client disconnected:", socket.id);
+      logger.info(`❌ Client disconnected: ${socket.id}`);
     });
   });
 
   // Start background monitoring of consumer status
   setInterval(async () => {
-    // If we haven't received a heartbeat in > 12 seconds and it was marked as connected, raise disconnect alert
     if (consumerConnected && Date.now() - lastConsumerHeartbeat > 12000) {
       consumerConnected = false;
       io.emit("consumer-status", "Disconnected");
-      console.log("🚨 Kafka Consumer status: DISCONNECTED");
+      logger.warn("🚨 Kafka Consumer status: DISCONNECTED");
 
       try {
         const disconnectAlert = await Alert.create({
           type: "danger",
+          source: "system",
           message: "Kafka consumer disconnected: Streaming pipeline offline.",
           time: new Date(),
         });
         io.emit("new-alert", disconnectAlert);
       } catch (err) {
-        console.error("❌ Failed to log consumer disconnect alert:", err.message);
+        logger.error("Failed to log consumer disconnect alert:", err.message);
       }
     }
   }, 5000);
@@ -76,4 +124,7 @@ const getIO = () => {
   return io;
 };
 
-module.exports = { initSocket, getIO };
+/** Returns whether the Kafka consumer is currently connected */
+const isConsumerConnected = () => consumerConnected;
+
+module.exports = { initSocket, getIO, isConsumerConnected };

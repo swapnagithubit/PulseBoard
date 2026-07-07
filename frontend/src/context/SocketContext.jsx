@@ -124,3 +124,6 @@ export const SocketProvider = ({ children }) => {
     </SocketContext.Provider>
   );
 };
+
+export const useSocket = () => useContext(SocketContext);
+
